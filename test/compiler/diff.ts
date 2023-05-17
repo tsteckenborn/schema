@@ -11,20 +11,32 @@ import * as Either from "@effect/data/Either"
 
 /*
 
-I don't think JSONPatch is suitable because it's not reversible: for example, if we take the `replace` operation:
+Looks like JSONPatch is not reversible: for example, if we take the `replace` operation:
 
 ```
 { "op": "replace", "path": "/biscuits/0/name", "value": "Chocolate Digestive" }
 ```
 
-the value to be replaced is not included, so there's no way to derive the reverse operation.
-Also, I'm not sure if having a `path` is convenient enough (even if we use a `ReadonlyArray<symbol | string | number>` instead of `string`).
+the value to be replaced is not included, AFAIK so there's no official way to derive the reverse operation.
 
-Therefore, for patches, I opted for a custom language with more information (from which we can always derive JSONPatch if needed).
+Also I'm not sure having a `path: string` is good (even if we use a `ReadonlyArray<symbol | string | number>` instead of `string`).
+
+So for my POC I opted for a recursive custom language with more information (from which we can always derive JSONPatch if needed),
+similar to https://github.com/IMax153/scrapelog/blob/ce17f1ade4f61eacf8ff24aae2aa36aa7fa33793/src/diff.ts
+(but smaller).
 
 Open questions:
 
 - what to do with excess properties?
+- should patches be serializable?
+
+Not sure what are the following (from https://github.com/IMax153/scrapelog/blob/ce17f1ade4f61eacf8ff24aae2aa36aa7fa33793/test/differ.ts):
+
+- remove unnecessary steps (not necessary?)
+- remove empty patches (why?)
+- optimize for sql... (???)
+- custom schema for fractional indexed arrays (as list of tuple: [f-index, value]) (???)
+- schema todo: support ordered arrays (for fractional indexing) (???)
 
 */
 
@@ -282,6 +294,10 @@ const getJSONPointer = (path: Array<string>): string =>
    */
   path.map((s) => "/" + s.replaceAll("~", "~0").replaceAll("/", "~1")).join("")
 
+const validateJson = (a: unknown) => S.validate(S.json)(a, { onExcessProperty: "error" })
+
+const validateString = S.validate(S.string)
+
 const isJson = (a: unknown): a is S.Json =>
   Either.isRight(S.validateEither(S.json)(a, { onExcessProperty: "error" }))
 
@@ -291,49 +307,30 @@ export const getJSONPatch = Either.liftThrowable((op: Op): Array<JSONPatch> => {
   const path: Array<string> = []
   const objectOps = (op: ObjectOps) => {
     op.ops.forEach(([key, op]) => {
-      if (typeof key === "string") {
-        path.push(key)
-        switch (op._tag) {
-          case "Replace": {
-            if (isJson(op.to)) {
-              out.push({ op: "replace", path: getJSONPointer(path), value: op.to })
-              break
-            } else {
-              throw new Error("invalid value")
-            }
-          }
-          case "ObjectOps":
-            objectOps(op)
-            break
-          case "Add": {
-            if (isJson(op.value)) {
-              out.push({ op: "add", path: getJSONPointer(path), value: op.value })
-              break
-            } else {
-              throw new Error("invalid value")
-            }
-          }
-          case "Remove":
-            out.push({ op: "remove", path: getJSONPointer(path) })
-            break
-        }
-        path.shift()
-      } else {
-        throw new Error("invalid key")
+      path.push(validateString(key))
+      switch (op._tag) {
+        case "Replace":
+          out.push({ op: "replace", path: getJSONPointer(path), value: validateJson(op.to) })
+          break
+        case "ObjectOps":
+          objectOps(op)
+          break
+        case "Add":
+          out.push({ op: "add", path: getJSONPointer(path), value: validateJson(op.value) })
+          break
+        case "Remove":
+          out.push({ op: "remove", path: getJSONPointer(path) })
+          break
       }
+      path.shift()
     })
   }
   switch (op._tag) {
     case "Identical":
       break
-    case "Replace": {
-      if (isJson(op.to)) {
-        out.push({ op: "replace", path: "", value: op.to })
-        break
-      } else {
-        throw new Error("invalid value")
-      }
-    }
+    case "Replace":
+      out.push({ op: "replace", path: "", value: validateJson(op.to) })
+      break
     case "ObjectOps":
       objectOps(op)
       break
