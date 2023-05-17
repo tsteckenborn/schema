@@ -6,19 +6,12 @@ import * as S from "@effect/schema/Schema"
 import * as fc from "fast-check"
 import * as jsonpatch from "fast-json-patch"
 
-const debug = false
-
 const isJson = (a: unknown): a is S.Json =>
   Either.isRight(S.validateEither(S.json)(a, { onExcessProperty: "error" }))
 
 const property = <I, A>(schema: S.Schema<I, A>) => {
   const differ = Diff.fromSchema(schema)
   const arb = A.to(schema)(fc)
-  if (debug) {
-    const [from, to] = fc.sample(arb, 2)
-    const patch = differ(from, to)
-    console.log("%o", patch)
-  }
   fc.assert(fc.property(arb, arb, (from, to) => {
     // test identical
     expect(differ(from, from).op).toEqual(Diff.identical)
@@ -96,6 +89,18 @@ describe.concurrent("diff", () => {
     }))
   })
 
+  it("struct/ nested", () => {
+    property(S.struct({
+      a: S.string,
+      b: S.struct({
+        c: S.number,
+        d: S.struct({
+          e: S.boolean
+        })
+      })
+    }))
+  })
+
   it("record/ string", () => {
     const schema = S.record(S.string, S.string)
     const differ = Diff.fromSchema(schema)
@@ -125,16 +130,12 @@ describe.concurrent("diff", () => {
     property(pipe(S.record(S.string, S.string), S.extend(S.record(S.symbol, S.string))))
   })
 
-  it("tuple/ 0 elements", () => {
+  it("tuple/ empty", () => {
     property(S.tuple())
   })
 
-  it("tuple/ 1 element", () => {
+  it("tuple/ e", () => {
     property(S.tuple(S.string))
-  })
-
-  it("tuple/ 2 elements", () => {
-    property(S.tuple(S.string, S.number))
   })
 
   // TODO: handle Maximum call stack size exceeded
@@ -152,7 +153,7 @@ describe.concurrent("diff", () => {
     property(schema)
   })
 
-  it.only("lazy (manual)", () => {
+  it("lazy (manual)", () => {
     interface A {
       readonly a: string
       readonly as: ReadonlyArray<A>
@@ -255,6 +256,25 @@ describe.concurrent("getJSONPatch", () => {
       },
       { op: "add", path: "/e", value: "e" },
       { op: "replace", path: "/c/d", value: false }
+    ])
+  })
+
+  it("struct/ nested", () => {
+    const schema = S.struct({
+      a: S.string,
+      b: S.struct({
+        c: S.number,
+        d: S.struct({
+          e: S.boolean
+        })
+      })
+    })
+    expectJSONPatch(schema, { "a": "", "b": { "c": 0, "d": { "e": true } } }, {
+      "a": "",
+      "b": { "c": -0, "d": { "e": false } }
+    }, [
+      { "op": "replace", "path": "/b/c", "value": -0 },
+      { "op": "replace", "path": "/b/d/e", "value": false }
     ])
   })
 

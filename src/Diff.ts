@@ -53,7 +53,7 @@ export interface Identical {
 
 export const identical: Identical = ({ _tag: "Identical" })
 
-export const isIdentical = (op: Op): op is Identical => op._tag === "Identical"
+const isIdentical = (op: Op): op is Identical => op._tag === "Identical"
 
 export interface Replace {
   readonly _tag: "Replace"
@@ -105,12 +105,12 @@ const reverseReplace = (op: Replace): Replace => replace(op.to, op.from)
 
 const reverseObjectOps = (op: ObjectOps): ObjectOps =>
   objectOps(
-    ReadonlyArray.mapNonEmpty(op.ops, ([key, op]) => [key, reverseObjectOp(op)])
+    ReadonlyArray.mapNonEmpty(op.ops, ([key, op]) => [key, reverseNestedOp(op)])
   )
 
 const reverseArrayOps = (op: ArrayOps): ArrayOps =>
   arrayOps(
-    ReadonlyArray.mapNonEmpty(op.ops, ([key, op]) => [key, reverseObjectOp(op)])
+    ReadonlyArray.mapNonEmpty(op.ops, ([key, op]) => [key, reverseNestedOp(op)])
   )
 
 const reverseOp = (op: Op): Op => {
@@ -126,7 +126,7 @@ const reverseOp = (op: Op): Op => {
   }
 }
 
-const reverseObjectOp = (op: NestedOp): NestedOp => {
+const reverseNestedOp = (op: NestedOp): NestedOp => {
   switch (op._tag) {
     case "Replace":
       return reverseReplace(op)
@@ -383,7 +383,7 @@ export const getJSONPatch = Either.liftThrowable((op: Op): Array<JSONPatch> => {
           arrayOps(op)
           break
       }
-      path.shift()
+      path.pop()
     })
   }
 
@@ -407,14 +407,14 @@ export const getJSONPatch = Either.liftThrowable((op: Op): Array<JSONPatch> => {
           arrayOps(op)
           break
       }
-      path.shift()
+      path.pop()
     })
   }
   switch (op._tag) {
     case "Identical":
       break
     case "Replace":
-      out.push({ op: "replace", path: "", value: validateJson(op.to) })
+      replace(op.to)
       break
     case "ObjectOps":
       objectOps(op)
