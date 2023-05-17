@@ -243,18 +243,40 @@ const go = (ast: AST.AST): Differ<any> => {
     case "Tuple": {
       const elements = ast.elements.map((e) => go(e.type))
       return (from, to) => {
+        const fromLen = from.length
+        const toLen = to.length
         const ops: Array<[number, NestedOp]> = []
         // ---------------------------------------------
         // handle elements
         // ---------------------------------------------
         for (let i = 0; i < elements.length; i++) {
+          if (ast.elements[i].isOptional) {
+            if (fromLen <= i) {
+              if (toLen <= i) {
+                break
+              } else {
+                ops.push([i, add(to[i])])
+                continue
+              }
+            } else {
+              if (toLen <= i) {
+                ops.unshift([i, remove(from[i])])
+                continue
+              }
+            }
+          }
           const differ = elements[i]
           const op = differ(from[i], to[i]).op
           if (!isIdentical(op)) {
             ops.push([i, op])
           }
         }
-        return make(ReadonlyArray.isNonEmptyReadonlyArray(ops) ? arrayOps(ops) : identical)
+
+        return make(
+          ReadonlyArray.isNonEmptyReadonlyArray(ops) ?
+            arrayOps(ops) :
+            identical
+        )
       }
     }
     case "TypeLiteral": {

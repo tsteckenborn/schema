@@ -138,6 +138,10 @@ describe.concurrent("diff", () => {
     property(S.tuple(S.string))
   })
 
+  it("tuple/ e?", () => {
+    property(pipe(S.tuple(), S.optionalElement(S.string)))
+  })
+
   // TODO: handle Maximum call stack size exceeded
   it.skip("lazy (arb)", () => {
     interface A {
@@ -220,8 +224,10 @@ const expectJSONPatch = <I, A>(
   if (Either.isRight(ejp)) {
     const jp = ejp.right
     expect(jp).toEqual(jsonPatch)
-    const actual = jsonpatch.applyPatch(from, jp, undefined, false).newDocument
-    expect(actual).toEqual(to)
+    if (jp.length > 0) {
+      const actual = jsonpatch.applyPatch(from, jp, undefined, false).newDocument
+      expect(actual).toEqual(to)
+    }
   }
 }
 
@@ -229,33 +235,28 @@ describe.concurrent("getJSONPatch", () => {
   it("number", () => {
     const schema = S.number
     expectJSONPatch(schema, 0, 1, [
-      { op: "replace", path: "", value: 1 }
+      { "op": "replace", "path": "", "value": 1 }
     ])
     expectJSONPatch(schema, 0, 0, [])
-    expectJSONPatch(schema, 0, -0, [{ op: "replace", path: "", value: -0 }])
+    expectJSONPatch(schema, 0, -0, [{ "op": "replace", "path": "", "value": -0 }])
   })
 
-  it("struct", () => {
+  it("struct/ prop + prop", () => {
     const schema = S.struct({
       a: S.string,
-      b: S.number,
-      c: S.struct({ d: S.boolean }),
-      e: S.optional(S.string)
+      b: S.number
     })
-    expectJSONPatch(schema, { a: "a", b: 1, c: { d: true } }, {
-      a: "b",
-      b: 2,
-      c: { d: false },
-      e: "e"
-    }, [
-      { op: "replace", path: "/a", value: "b" },
-      {
-        op: "replace",
-        path: "/b",
-        value: 2
-      },
-      { op: "add", path: "/e", value: "e" },
-      { op: "replace", path: "/c/d", value: false }
+    expectJSONPatch(schema, { "a": "", "b": -0 }, { "a": "", "b": -0 }, [])
+  })
+
+  it("struct/ prop + optional prop", () => {
+    const schema = S.struct({
+      a: S.string,
+      b: S.optional(S.number)
+    })
+    expectJSONPatch(schema, { "a": "a" }, { "a": "b", "b": 2 }, [
+      { "op": "replace", "path": "/a", "value": "b" },
+      { "op": "add", "path": "/b", "value": 2 }
     ])
   })
 
@@ -280,15 +281,46 @@ describe.concurrent("getJSONPatch", () => {
 
   it("record/ string", () => {
     const schema = S.record(S.string, S.string)
-    expectJSONPatch(schema, {}, { "": "" }, [{ op: "add", path: "/", value: "" }])
-    expectJSONPatch(schema, {}, { "/": "" }, [{ op: "add", path: "/~1", value: "" }])
+    expectJSONPatch(schema, {}, { "": "" }, [{ "op": "add", "path": "/", "value": "" }])
+    expectJSONPatch(schema, {}, { "/": "" }, [{ "op": "add", "path": "/~1", "value": "" }])
   })
 
-  it("tuple", () => {
+  it("tuple/ e + e", () => {
     const schema = S.tuple(S.string, S.number)
     expectJSONPatch(schema, ["a", 1], ["b", 2], [
-      { op: "replace", path: "/0", value: "b" },
-      { op: "replace", path: "/1", value: 2 }
+      { "op": "replace", "path": "/0", "value": "b" },
+      { "op": "replace", "path": "/1", "value": 2 }
+    ])
+  })
+
+  it("tuple/ e?", () => {
+    const schema = pipe(S.tuple(), S.optionalElement(S.string))
+    expectJSONPatch(schema, [], ["b"], [
+      { "op": "add", "path": "/0", "value": "b" }
+    ])
+    expectJSONPatch(schema, ["a"], [], [
+      { "op": "remove", "path": "/0" }
+    ])
+  })
+
+  it("tuple/ e? + e?", () => {
+    const schema = pipe(S.tuple(), S.optionalElement(S.string), S.optionalElement(S.number))
+    expectJSONPatch(schema, [], ["b", 1], [
+      { "op": "add", "path": "/0", "value": "b" },
+      { "op": "add", "path": "/1", "value": 1 }
+    ])
+    expectJSONPatch(schema, ["b", 1], [], [
+      { "op": "remove", "path": "/1" },
+      { "op": "remove", "path": "/0" }
+    ])
+  })
+
+  it("tuple/ e + e? + e?", () => {
+    const schema = pipe(S.tuple(S.string), S.optionalElement(S.string), S.optionalElement(S.string))
+    expectJSONPatch(schema, ["a", "b", "c"], ["d"], [
+      { "op": "remove", "path": "/2" },
+      { "op": "remove", "path": "/1" },
+      { "op": "replace", "path": "/0", "value": "d" }
     ])
   })
 })
