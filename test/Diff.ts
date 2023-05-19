@@ -31,7 +31,7 @@ const property = <I, A>(schema: S.Schema<I, A>) => {
   }))
 }
 
-describe.concurrent("diff", () => {
+describe.concurrent("Diff", () => {
   it("should handle NaN", () => {
     const differ = Diff.fromSchema(S.number)
     const patch = differ(NaN, 0)
