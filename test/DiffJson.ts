@@ -16,10 +16,15 @@ const expectPatch = <I extends S.JsonObject | S.JsonArray, A>(
   expect(Diff.applyPatch(Diff.inverse(patch))(to)).toEqual(from)
 }
 
-describe.concurrent("Diff2", () => {
+describe.concurrent("DiffJson", () => {
   it("struct/ number", () => {
     const schema = S.struct({ a: S.number })
     expectPatch(schema, { a: 1 }, { a: 2 })
+  })
+
+  it("struct/ Date", () => {
+    const schema = S.struct({ a: S.Date })
+    expectPatch(schema, { a: new Date(0) }, { a: new Date(1000) })
   })
 
   it("struct/ chunk(number)", () => {
